@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026 DIGITAL TWIN WORKSHOP | 스마트 교실 · 버스 공장 실습</title>
+    <style>
+        /* 깔끔한 국문 출력을 위한 웹 폰트 로드 */
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/pretendardvariable.css');
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: #121420; /* 원본 UI와 동일한 짙은 네이비 배경 */
+            color: #ffffff;
+            font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1040px;
+            margin: 0 auto;
+            padding: 80px 24px;
+        }
+
+        /* 헤더 섹션 영역 */
+        .header-top {
+            color: #4ade80; /* 상단 민트색 텍스트 */
+            font-size: 0.85rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            margin-bottom: 24px;
+            text-transform: uppercase;
+        }
+
+        .main-title {
+            font-size: 3.5rem;
+            font-weight: 700;
+            line-height: 1.3;
+            margin-bottom: 24px;
+            word-break: keep-all;
+        }
+
+        .main-desc {
+            color: #a1a1aa; /* 회색 설명 텍스트 */
+            font-size: 1rem;
+            line-height: 1.6;
+            max-width: 700px;
+            margin-bottom: 60px;
+            word-break: keep-all;
+        }
+
+        /* 2단 그리드 레이아웃 */
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 24px;
+        }
+
+        /* 카드 UI 스타일 */
+        .card {
+            background-color: #1e2030;
+            border: 1px solid #2d3047;
+            border-radius: 16px;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            border-color: #4b4e6d;
+        }
+
+        .card-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            letter-spacing: 0.05em;
+        }
+
+        .label-purple { color: #818cf8; }
+        .label-blue { color: #60a5fa; }
+
+        .card-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            line-height: 1.4;
+            margin-bottom: 20px;
+            word-break: keep-all;
+        }
+
+        .card-desc {
+            color: #9ca3af;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            margin-bottom: 40px;
+            flex-grow: 1;
+            word-break: keep-all;
+        }
+
+        /* 버튼 공통 스타일 */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 14px 24px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-decoration: none;
+            color: #ffffff;
+            width: fit-content;
+            margin-bottom: 24px;
+            transition: background-color 0.2s;
+        }
+
+        /* 카드별 버튼 컬러 적용 */
+        .btn-purple { background-color: #818cf8; }
+        .btn-purple:hover { background-color: #6366f1; }
+
+        .btn-teal { background-color: #2dd4bf; }
+        .btn-teal:hover { background-color: #14b8a6; }
+
+        /* 하단 텍스트 링크 */
+        .text-link {
+            font-size: 0.9rem;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+        }
+        .text-link:hover { text-decoration: underline; }
+        
+        .link-purple { color: #818cf8; }
+        .link-blue { color: #3b82f6; }
+
+        /* 링크 화살표 아이콘 */
+        .arrow::after {
+            content: " ↗";
+            font-family: system-ui;
+            margin-left: 4px;
+        }
+
+        /* 모바일 반응형 처리 */
+        @media (max-width: 768px) {
+            .main-title { font-size: 2.2rem; }
+            .card-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 헤더 영역 -->
+        <div class="header-top">2026 · WEB 3D DIGITAL TWIN WORKSHOP</div>
+        <h1 class="main-title">웹 브라우저에서 만나는<br>3D 디지털 트윈 실습.</h1>
+        <p class="main-desc">
+            Three.js로 만든 두 가지 디지털 트윈을 실습합니다. 스마트 교실에서는 가상 센서와 설비 제어를, 버스 공장에서는 8단계 조립 공정을 3D로 살펴봅니다. 별도 설치 없이 클릭만으로 웹앱을 바로 구동해볼 수 있으며, 모든 수치는 학습용 시뮬레이션 값입니다.
+        </p>
+
+        <!-- 카드 레이아웃 그리드 -->
+        <div class="card-grid">
+            <!-- 첫 번째 카드 (스마트 교실 실습) -->
+            <div class="card">
+                <div class="card-label label-purple">COURSE A / SMART CLASSROOM</div>
+                <h2 class="card-title">클릭만으로<br>스마트 교실 실습하기</h2>
+                <p class="card-desc">
+                    학교 교실을 3D로 재현한 디지털 트윈입니다. 재실 인원·환기·조명·블라인드를 조절하면 온도, CO₂, 조도 가상 센서값과 3D 장면이 함께 바뀌고, 결과를 JSON·CSV·PNG로 내보낼 수 있습니다.
+                </p>
+                <a href="smart_classroom_neon.html" class="btn btn-purple arrow">스마트 교실 실습</a>
+                <a href="smart_classroom_neon.html" class="text-link link-purple arrow">결과 화면 보기</a>
+            </div>
+
+            <!-- 두 번째 카드 (버스 공장 실습) -->
+            <div class="card">
+                <div class="card-label label-blue">COURSE B / BUS FACTORY</div>
+                <h2 class="card-title">클릭만으로<br>버스 공장 실습하기</h2>
+                <p class="card-desc">
+                    전기 저상버스 조립 라인을 3D로 재현한 디지털 트윈입니다. 섀시부터 최종 검사까지 8단계 공정을 자동 재생하거나 단계별로 넘겨 보고, 부품을 클릭해 가상 사양을 확인할 수 있습니다.
+                </p>
+                <a href="bus_factory_digital_twin.html" class="btn btn-teal arrow">버스 공장 실습</a>
+                <a href="bus_factory_digital_twin.html" class="text-link link-blue arrow">결과 화면 보기</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

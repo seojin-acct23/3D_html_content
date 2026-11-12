@@ -1,0 +1,1218 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#050a12">
+<title>가상 버스 조립 공장 | 디지털 트윈 관제</title>
+<style>
+/* =====================================================================
+   1. 디자인 토큰 : 다크 모드 + 블루/민트 네온 포인트
+   ===================================================================== */
+:root{
+  --bg:#050a12; --panel:#08121d; --panel-2:#0c1a29; --line:#153049;
+  --text:#d9ecff; --muted:#6f8ba8; --blue:#2f9bff; --mint:#2ff5c8; --warn:#ffb84d;
+  --glow-blue:0 0 12px #2f9bff66; --glow-mint:0 0 12px #2ff5c866;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--text);
+  font-family:"Pretendard","Noto Sans KR","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;font-size:13px}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+button:disabled{opacity:.35;cursor:not-allowed}
+button:focus-visible,input:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+
+/* =====================================================================
+   2. 전체 레이아웃 : [좌측 패널 | 3D 뷰어 | 우측 패널] 3열 그리드
+   ===================================================================== */
+#app{display:grid;grid-template-columns:290px minmax(0,1fr) 310px;height:100vh;height:100dvh}
+.panel{min-height:0;overflow-y:auto;background:linear-gradient(180deg,var(--panel),#060d16);padding:18px 16px 22px;
+  scrollbar-width:thin;scrollbar-color:#1d3c5a transparent;z-index:30}
+.panel.left{border-right:1px solid var(--line)}
+.panel.right{border-left:1px solid var(--line)}
+.sec-title{display:flex;align-items:center;gap:8px;margin:20px 0 10px;font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--blue)}
+.sec-title::before{content:"";width:6px;height:6px;background:var(--mint);box-shadow:var(--glow-mint)}
+.sec-title small{margin-left:auto;color:var(--muted);font-weight:500;letter-spacing:0}
+
+/* 브랜드 영역 */
+.brand{display:flex;gap:12px;align-items:center}
+.brand-mark{width:42px;height:42px;display:grid;place-items:center;border:1px solid var(--mint);border-radius:8px;
+  color:var(--mint);font:700 13px var(--mono);box-shadow:inset 0 0 14px #2ff5c833,var(--glow-mint)}
+.brand h1{margin:2px 0 0;font-size:15px;letter-spacing:.02em}
+.brand small{color:var(--blue);font:600 9px var(--mono);letter-spacing:.16em}
+.line-status{margin-top:14px;padding:9px 11px;border:1px solid #124a47;border-radius:8px;background:#06211f;font-size:11px;color:#b4f7e8}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--mint);box-shadow:var(--glow-mint);margin-right:7px;animation:blink 1.6s infinite}
+@keyframes blink{50%{opacity:.35}}
+
+/* 공정 단계 버튼 목록 */
+#stage-list{display:flex;flex-direction:column;gap:5px}
+.stage{display:grid;grid-template-columns:30px 1fr 16px;gap:9px;align-items:center;text-align:left;width:100%;
+  padding:9px 9px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--muted);transition:.15s}
+.stage:hover{background:var(--panel-2);color:var(--text)}
+.stage .num{font:700 11px var(--mono);text-align:center;padding:6px 0;border-radius:6px;background:#0d1f31;color:var(--blue)}
+.stage strong{display:block;font-size:12px;font-weight:600}
+.stage small{display:block;margin-top:2px;font-size:10px;opacity:.75}
+.stage .mark{font-size:11px;color:var(--mint)}
+.stage.done .num{background:#0b3a35;color:var(--mint)}
+.stage.active{border-color:#1f6fb8;background:#0b2238;color:#fff;box-shadow:inset 3px 0 0 var(--blue),var(--glow-blue)}
+
+/* 재생 제어 / 토글 */
+.row{display:flex;gap:6px;margin-bottom:7px}
+.btn{flex:1;min-width:0;padding:10px 6px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);font-size:11px;font-weight:600;transition:.15s}
+.btn:hover:not(:disabled){border-color:var(--blue);background:#102a44}
+.btn.primary{flex:1.5;border-color:var(--blue);background:linear-gradient(180deg,#1672c9,#0d4f95);color:#fff;box-shadow:var(--glow-blue)}
+.btn.on{border-color:var(--mint);background:#0a3833;color:var(--mint);box-shadow:var(--glow-mint)}
+.speed{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--muted);margin:10px 0 2px}
+.speed input{flex:1;accent-color:var(--mint)}
+.speed b{font:700 11px var(--mono);color:var(--mint);width:38px;text-align:right}
+.note{margin-top:18px;font-size:10px;line-height:1.7;color:#4c6480}
+
+/* =====================================================================
+   3. 중앙 3D 뷰어 + 플로팅 HUD
+   ===================================================================== */
+#viewer{position:relative;min-width:0;overflow:hidden;background:radial-gradient(ellipse at 50% 30%,#0b1d31,#050a12 70%)}
+#canvas-host{position:absolute;inset:0}
+#canvas-host canvas{display:block;width:100%;height:100%;touch-action:none}
+.hud{position:absolute;left:14px;right:14px;z-index:5;display:flex;gap:10px;pointer-events:none}
+.hud>*{pointer-events:auto}
+.hud.top{top:14px;justify-content:space-between;align-items:flex-start}
+.hud.bottom{bottom:14px;flex-direction:column;align-items:center}
+.glass{border:1px solid #1d4468;border-radius:10px;background:#07131fcc;backdrop-filter:blur(10px);box-shadow:0 8px 28px #0008}
+.status{padding:11px 14px;max-width:min(520px,62%)}
+.status .step{font:700 10px var(--mono);letter-spacing:.14em;color:var(--blue)}
+.status .step b{font-size:16px;color:var(--mint)}
+.status h2{margin:4px 0 3px;font-size:15px}
+.status p{margin:0;font-size:11px;color:#9fb6cc;line-height:1.5}
+.meta{padding:9px 12px;text-align:right;font:600 10px var(--mono);color:var(--muted);line-height:1.8;white-space:nowrap}
+.pill{display:inline-block;padding:3px 9px;border-radius:20px;border:1px solid var(--blue);color:var(--blue);font-size:10px}
+.pill.busy{border-color:var(--mint);color:var(--mint);box-shadow:var(--glow-mint)}
+.pill.done{border-color:var(--warn);color:var(--warn)}
+.views{display:flex;gap:3px;padding:5px;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.views button{white-space:nowrap;border:0;border-radius:7px;background:transparent;color:#9db6cd;padding:8px 11px;font-size:11px;font-weight:600}
+.views button:hover{background:#12304b;color:#fff}
+.views button.active{background:var(--blue);color:#04121f}
+.mini-progress{width:min(560px,100%);height:3px;border-radius:3px;background:#12283d;overflow:hidden;pointer-events:none}
+.mini-progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--blue),var(--mint));box-shadow:var(--glow-mint);transition:width .25s}
+#tip{position:absolute;z-index:6;pointer-events:none;padding:5px 9px;border:1px solid var(--mint);border-radius:6px;background:#04131ae6;
+  color:var(--mint);font-size:11px;white-space:nowrap;transform:translate(12px,14px)}
+#loading{position:absolute;inset:0;z-index:20;display:grid;place-content:center;gap:10px;text-align:center;background:var(--bg);color:var(--muted);font-size:12px;padding:30px}
+#loading b{color:var(--mint);font:700 14px var(--mono);letter-spacing:.2em}
+[hidden]{display:none!important}
+
+/* =====================================================================
+   4. 우측 관제 패널 : 진행률 / KPI / 인스펙터 / 로그
+   ===================================================================== */
+.progress{display:flex;align-items:center;gap:14px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2)}
+.ring{position:relative;width:96px;height:96px;flex:none}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:8}
+.ring .track{stroke:#10263b}
+.ring .bar{stroke:var(--mint);stroke-linecap:round;stroke-dasharray:263.9;stroke-dashoffset:263.9;transition:stroke-dashoffset .3s;filter:drop-shadow(0 0 5px #2ff5c8aa)}
+.ring b{position:absolute;inset:0;display:grid;place-content:center;font:700 20px var(--mono)}
+.ring b em{font-style:normal;font-size:10px;color:var(--muted)}
+.progress dl{margin:0;flex:1;display:grid;grid-template-columns:1fr auto;gap:5px 8px;font-size:11px}
+.progress dt{color:var(--muted)}
+.progress dd{margin:0;font:700 11px var(--mono);text-align:right}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.kpi{padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2)}
+.kpi small{display:block;color:var(--muted);font-size:10px;margin-bottom:5px}
+.kpi b{font:700 17px var(--mono);font-variant-numeric:tabular-nums}
+.kpi b em{font-style:normal;font-size:10px;color:var(--muted);margin-left:3px}
+.kpi.mint b{color:var(--mint)} .kpi.blue b{color:var(--blue)}
+#spark{display:block;width:100%;height:46px;margin-top:8px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2)}
+.inspector{min-height:150px;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2)}
+.inspector.sel{border-color:var(--mint);box-shadow:inset 0 0 18px #2ff5c81a}
+.inspector h3{margin:0 0 3px;font-size:14px}
+.inspector .tag{font:600 9px var(--mono);letter-spacing:.12em;color:var(--mint)}
+.inspector p{margin:8px 0;font-size:11px;line-height:1.7;color:#a4bad0}
+.inspector table{width:100%;border-collapse:collapse;font-size:11px}
+.inspector td{padding:4px 0;border-top:1px solid #12283d}
+.inspector td:first-child{color:var(--muted);width:42%}
+.inspector td:last-child{text-align:right;font-family:var(--mono)}
+.inspector .row{margin:10px 0 0}
+#log{display:flex;flex-direction:column;gap:6px;max-height:170px;overflow:auto;scrollbar-width:thin}
+#log div{padding-left:9px;border-left:2px solid #1b527f;font-size:10px;line-height:1.5;color:#93abc2}
+#log time{display:block;font:600 9px var(--mono);color:var(--blue)}
+
+/* =====================================================================
+   5. 반응형 : 좁은 화면에서는 좌/우 패널을 서랍으로 숨기고 하단 메뉴로 연다
+   ===================================================================== */
+.mobile-nav,#scrim{display:none}
+@media(max-width:1180px){#app{grid-template-columns:250px minmax(0,1fr) 270px}.panel{padding:16px 12px}}
+@media(max-width:900px){
+  #app{display:block}
+  #viewer{height:100vh;height:100dvh}
+  .panel{position:fixed;top:0;bottom:0;width:min(86vw,320px);transition:transform .25s;box-shadow:0 0 40px #000c}
+  .panel.left{left:0;transform:translateX(-102%)}
+  .panel.right{right:0;transform:translateX(102%)}
+  .panel.open{transform:none}
+  #scrim.open{display:block;position:fixed;inset:0;z-index:25;background:#000a}
+  .mobile-nav{display:flex;position:absolute;left:0;right:0;bottom:0;z-index:8;border-top:1px solid var(--line);background:#06101af2}
+  .mobile-nav button{flex:1;padding:14px 6px;border:0;background:transparent;font-size:12px;font-weight:600;color:var(--text)}
+  .mobile-nav button+button{border-left:1px solid var(--line)}
+  .hud.bottom{bottom:58px}
+  .hud{left:8px;right:8px}.hud.top{top:8px}
+  .status{max-width:68%;padding:9px 11px}.status h2{font-size:13px}.status p{display:none}
+  .meta{padding:7px 9px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============================ 좌측 패널 : 공정 제어 ============================ -->
+  <aside id="panel-left" class="panel left" aria-label="공정 제어">
+    <div class="brand">
+      <div class="brand-mark">DT</div>
+      <div><small>DIGITAL TWIN · LINE 01</small><h1>가상 버스 조립 공장</h1></div>
+    </div>
+    <div class="line-status"><span class="dot"></span>가상 조립 라인 가동 중 · 전기 저상버스</div>
+
+    <div class="sec-title">공정 단계 <small>8 STEP</small></div>
+    <div id="stage-list"><!-- JS에서 공정 버튼을 생성 --></div>
+
+    <div class="sec-title">자동 재생</div>
+    <div class="row">
+      <button id="btn-prev" class="btn" title="이전 단계 (←)">◀ 이전</button>
+      <button id="btn-play" class="btn primary" title="재생/일시정지 (Space)">▶ 재생</button>
+      <button id="btn-next" class="btn" title="다음 단계 (→)">다음 ▶</button>
+    </div>
+    <label class="speed">속도 <input id="speed" type="range" min="0.5" max="2.5" step="0.25" value="1"><b id="speed-val">1.0×</b></label>
+
+    <div class="sec-title">보기 옵션</div>
+    <div class="row">
+      <button id="btn-explode" class="btn" aria-pressed="false">분해 보기</button>
+      <button id="btn-xray" class="btn" aria-pressed="false">X-RAY</button>
+    </div>
+    <div class="row">
+      <button id="btn-spin" class="btn" aria-pressed="false">자동 회전</button>
+      <button id="btn-reset" class="btn">↺ 초기화</button>
+    </div>
+    <p class="note">실제 제조사의 공정·치수를 재현하지 않은 학습용 개념 모델이며, 모든 수치는 시뮬레이션 값입니다.</p>
+  </aside>
+
+  <!-- ============================ 중앙 : 3D 뷰어 ============================ -->
+  <main id="viewer">
+    <div id="canvas-host"></div>
+
+    <!-- 상단 플로팅 UI : 현재 진행 상태 -->
+    <div class="hud top">
+      <div class="status glass">
+        <div class="step"><span class="dot"></span>STEP <b id="hud-step">01</b> / 08</div>
+        <h2 id="hud-title">섀시 프레임</h2>
+        <p id="hud-desc"></p>
+      </div>
+      <div class="meta glass">
+        <span id="hud-state" class="pill">대기</span><br>
+        <span id="hud-fps">-- FPS</span> · <span id="hud-calls">0</span> DC<br>
+        <span id="hud-clock">--:--:--</span>
+      </div>
+    </div>
+
+    <!-- 하단 플로팅 UI : 카메라 시점 프리셋 -->
+    <div class="hud bottom">
+      <div class="mini-progress"><i id="mini-fill"></i></div>
+      <div id="views" class="views glass" aria-label="카메라 시점">
+        <button data-view="overview" class="active">전경</button>
+        <button data-view="side">측면</button>
+        <button data-view="front">전면</button>
+        <button data-view="rear">후면</button>
+        <button data-view="top">상부</button>
+        <button data-view="under">하부</button>
+        <button data-view="cabin">실내</button>
+        <button data-view="stage">현재 공정</button>
+      </div>
+    </div>
+
+    <div id="tip" hidden></div>
+    <div id="loading"><b>LOADING DIGITAL TWIN</b><span id="loading-msg">Three.js 모듈과 공장 씬을 준비하고 있습니다…</span></div>
+
+    <!-- 모바일 하단 메뉴(햄버거) -->
+    <nav class="mobile-nav">
+      <button id="nav-left">☰ 공정 제어</button>
+      <button id="nav-right">▤ 관제 패널</button>
+    </nav>
+  </main>
+
+  <!-- ============================ 우측 패널 : 관제 모니터 ============================ -->
+  <aside id="panel-right" class="panel right" aria-label="관제 모니터">
+    <div class="sec-title" style="margin-top:0">전체 공정 진행률</div>
+    <div class="progress">
+      <div class="ring">
+        <svg viewBox="0 0 100 100"><circle class="track" cx="50" cy="50" r="42"/><circle id="ring-bar" class="bar" cx="50" cy="50" r="42"/></svg>
+        <b><span><span id="pct">0</span><em>%</em></span></b>
+      </div>
+      <dl>
+        <dt>완료 공정</dt><dd id="st-done">0 / 8</dd>
+        <dt>장착 모듈</dt><dd id="st-parts">0 / 0</dd>
+        <dt>라인 상태</dt><dd id="st-state">대기</dd>
+      </dl>
+    </div>
+
+    <div class="sec-title">가상 KPI <small>SIMULATED</small></div>
+    <div class="kpis">
+      <div class="kpi mint"><small>설비종합효율 OEE</small><b><span id="k-oee">0.0</span><em>%</em></b></div>
+      <div class="kpi blue"><small>택트 타임</small><b><span id="k-tact">0</span><em>s</em></b></div>
+      <div class="kpi"><small>체결 토크 평균</small><b><span id="k-torque">0</span><em>N·m</em></b></div>
+      <div class="kpi"><small>누적 전력</small><b><span id="k-energy">0.0</span><em>kWh</em></b></div>
+      <div class="kpi"><small>라인 속도</small><b><span id="k-speed">0.0</span><em>m/min</em></b></div>
+      <div class="kpi"><small>검출 불량</small><b><span id="k-defect">0</span><em>건</em></b></div>
+    </div>
+    <canvas id="spark" width="560" height="92" aria-label="OEE 추이"></canvas>
+
+    <div class="sec-title">부품 인스펙터 <small>CLICK IN 3D</small></div>
+    <div id="inspector" class="inspector"></div>
+
+    <div class="sec-title">이벤트 로그</div>
+    <div id="log" aria-live="polite"></div>
+  </aside>
+</div>
+<div id="scrim"></div>
+
+<!-- Three.js 를 CDN importmap 방식으로 로드 -->
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* =====================================================================
+   A. 공통 유틸
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const pad2 = n => String(n).padStart(2, '0');
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const ZERO = V();
+
+/* =====================================================================
+   B. 공정 데이터 : 8단계 (섀시 → 바퀴 → 구동계 → 골격 → 외판 → 유리/문 → 실내 → 검사)
+      cam / target 은 해당 공정을 가장 잘 볼 수 있는 카메라 위치
+   ===================================================================== */
+const STAGES = [
+  { title:'섀시 프레임',      sub:'사이드 레일 / 크로스 멤버', desc:'차량 하중을 받는 종방향 레일과 횡방향 멤버, 플로어 데크를 결합합니다.', cam:[-9.5,5.8,11.5],  target:[0,1.2,0] },
+  { title:'차축 · 바퀴',      sub:'액슬 / 서스펜션 / 휠',      desc:'전·후 차축과 에어 서스펜션, 휠 4본을 섀시에 장착합니다.',               cam:[-8.5,2.8,10.5],  target:[0,1.0,0] },
+  { title:'배터리 · 구동계',  sub:'배터리 팩 / e-액슬 / 인버터', desc:'하부 고전압 배터리 팩 3기와 구동 모터, 인버터, 고전압 케이블을 설치합니다.', cam:[2.5,1.9,10.5], target:[0.6,1.1,0] },
+  { title:'차체 골격',        sub:'필러 / 루프 보우',          desc:'좌·우 측면 골격과 지붕 보우를 세워 객실 구조를 만듭니다.',               cam:[-11.5,7,12.5],   target:[0,2.5,0] },
+  { title:'외관 차체',        sub:'측면·전후 외판 / 루프',     desc:'도장된 측면·전면·후면 외판과 루프 패널(공조 유닛 포함)을 부착합니다.',   cam:[-12.5,6.4,13.5], target:[0,2.5,0] },
+  { title:'유리 · 출입문',    sub:'윈드실드 / 창 / 도어 / 램프', desc:'전·후면 유리, 측면 창, 승하차 도어와 미러·램프를 장착합니다.',          cam:[-4,3.8,13.5],    target:[-1,2.5,0] },
+  { title:'실내 좌석',        sub:'바닥재 / 좌석 / 손잡이 / 운전석', desc:'바닥재, 승객 좌석, 안전 손잡이, 운전석 모듈을 설치합니다. (외판 자동 X-RAY)', cam:[-9.5,8.5,9.5], target:[0,2.4,0] },
+  { title:'최종 품질 검사',   sub:'스캔 게이트 / 가상 검수',    desc:'스캔 게이트가 차량 전장을 훑으며 가상 품질 검사를 수행합니다.',          cam:[-13,7.6,15],     target:[0,2.4,0] }
+];
+
+/* =====================================================================
+   C. 렌더러 / 씬 / 카메라 / OrbitControls
+   ===================================================================== */
+const host = $('canvas-host');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050a12);
+scene.fog = new THREE.FogExp2(0x050a12, 0.017);          // 원거리를 어둡게 감춰 공간감 + 렌더 부담 완화
+
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 220);
+camera.position.set(-20, 12, 24);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); // 고해상도 기기 과부하 방지
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.25;
+renderer.shadowMap.enabled = true;
+host.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.2, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.minDistance = 1.2;
+controls.maxDistance = 48;
+controls.maxPolarAngle = Math.PI * 0.52;                  // 바닥 아래로 내려가지 않도록 제한
+controls.autoRotateSpeed = 0.8;
+
+/* =====================================================================
+   D. 조명 : HemisphereLight(환경광) + 그림자 DirectionalLight(주광) + 네온 포인트
+   ===================================================================== */
+scene.add(new THREE.HemisphereLight(0xa9d4ff, 0x09131f, 1.25));
+
+const sun = new THREE.DirectionalLight(0xffffff, 2.7);
+sun.position.set(-9, 19, 11);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left:-20, right:20, top:16, bottom:-16, near:1, far:60 });
+sun.shadow.camera.updateProjectionMatrix();              // 그림자 절두체 변경 사항 반영
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.03;
+scene.add(sun);
+
+// 그림자 없는 색상 포인트 라이트 2개로 사이버 톤 림라이트 연출 (그림자를 끄면 비용이 매우 낮음)
+const neonA = new THREE.PointLight(0x2ff5c8, 60, 30, 2); neonA.position.set(9, 5, -8);  scene.add(neonA);
+const neonB = new THREE.PointLight(0x2f9bff, 70, 34, 2); neonB.position.set(-10, 6, 8); scene.add(neonB);
+
+/* =====================================================================
+   E. 공용 재질 : 같은 재질을 재사용하여 셰이더 프로그램 수와 메모리를 줄인다
+   ===================================================================== */
+const std = (color, metalness = 0.5, roughness = 0.5, extra = {}) =>
+  new THREE.MeshStandardMaterial({ color, metalness, roughness, ...extra });
+const M = {
+  floor:   std(0x07101b, 0.35, 0.8),
+  steel:   std(0x7c8a98, 0.8, 0.32),
+  dark:    std(0x2a3642, 0.75, 0.4),
+  silver:  std(0xc9d2da, 0.8, 0.25),
+  black:   std(0x141b22, 0.5, 0.5),
+  rubber:  std(0x0e1114, 0, 0.95),
+  robot:   std(0xe8eef4, 0.35, 0.4),
+  robotJ:  std(0x1b2632, 0.7, 0.35),
+  paint:   new THREE.MeshPhysicalMaterial({ color:0x1173d4, metalness:0.35, roughness:0.28, clearcoat:0.8, clearcoatRoughness:0.2 }),
+  roof:    new THREE.MeshPhysicalMaterial({ color:0xdfe7ee, metalness:0.2, roughness:0.35, clearcoat:0.6 }),
+  glass:   new THREE.MeshStandardMaterial({ color:0x4fd6ff, metalness:0.3, roughness:0.08, transparent:true, opacity:0.38, depthWrite:false, side:THREE.DoubleSide }),
+  trim:    std(0x0d1620, 0.4, 0.4),
+  battery: std(0x1e3a4a, 0.6, 0.35),
+  cell:    std(0x2ff5c8, 0.3, 0.4, { emissive:0x17b897, emissiveIntensity:0.9 }),
+  hv:      std(0xff7a1a, 0.15, 0.35, { emissive:0x8a3200, emissiveIntensity:0.5 }),
+  seat:    std(0x1c3d63, 0.05, 0.85),
+  seatIn:  std(0x2f9bff, 0.05, 0.9),
+  pole:    std(0xf2c230, 0.4, 0.35),
+  liner:   std(0x39444f, 0.1, 0.9),
+  led:     std(0xeaf9ff, 0, 0.3, { emissive:0xbfeeff, emissiveIntensity:1.6 }),
+  tail:    std(0xff3b4a, 0, 0.3, { emissive:0xc21526, emissiveIntensity:1.3 }),
+  mint:    std(0x2ff5c8, 0, 0.4, { emissive:0x2ff5c8, emissiveIntensity:1.5 }),
+  blue:    std(0x2f9bff, 0, 0.4, { emissive:0x2f9bff, emissiveIntensity:1.5 })
+};
+// X-RAY 대상 재질과 원래 상태 저장
+const XRAY_MATS = [M.paint, M.roof, M.glass];
+const xrayDefaults = XRAY_MATS.map(m => ({ transparent:m.transparent, opacity:m.opacity, depthWrite:m.depthWrite }));
+
+/* =====================================================================
+   F. 프리미티브 헬퍼 : Box / Cylinder / 텍스트 라벨(CanvasTexture)
+   ===================================================================== */
+function box(parent, w, h, d, mat, x = 0, y = 0, z = 0) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z); m.castShadow = m.receiveShadow = true;
+  parent.add(m); return m;
+}
+// axis : 'y'(기본, 세로) | 'x' | 'z' 방향으로 눕힌 원기둥
+function cyl(parent, r, h, mat, x = 0, y = 0, z = 0, axis = 'y', seg = 24) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, seg), mat);
+  if (axis === 'x') m.rotation.z = Math.PI / 2;
+  if (axis === 'z') m.rotation.x = Math.PI / 2;
+  m.position.set(x, y, z); m.castShadow = m.receiveShadow = true;
+  parent.add(m); return m;
+}
+function label(parent, text, w, h, x, y, z, rotY = 0, fg = '#2ff5c8', bg = '#06131f') {
+  const c = document.createElement('canvas');
+  c.width = 1024; c.height = Math.max(64, Math.round(1024 * h / w));
+  const g = c.getContext('2d');
+  g.fillStyle = bg; g.fillRect(0, 0, c.width, c.height);
+  g.strokeStyle = fg; g.globalAlpha = 0.5; g.lineWidth = 6; g.strokeRect(6, 6, c.width - 12, c.height - 12); g.globalAlpha = 1;
+  g.fillStyle = fg; g.font = `700 ${Math.round(c.height * 0.5)}px "Noto Sans KR","Malgun Gothic",sans-serif`;
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, c.width / 2, c.height / 2, c.width - 40);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex }));
+  m.position.set(x, y, z); m.rotation.y = rotY; parent.add(m); return m;
+}
+
+/* =====================================================================
+   G. 공장 환경 : 그리드 바닥 / 컨베이어 / 기둥·트러스 / 스캔 게이트 / AGV / 홀로 링
+   ===================================================================== */
+const factory = new THREE.Group(); scene.add(factory);
+const CONVEYOR_TOP = 0.36;                                 // 버스가 올라가는 컨베이어 상면 높이
+
+// G-1. 바닥 + 네온 그리드
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), M.floor);
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; factory.add(ground);
+const gridFine = new THREE.GridHelper(140, 140, 0x0e3a63, 0x0b2238);
+gridFine.position.y = 0.004; gridFine.material.transparent = true; gridFine.material.opacity = 0.55; factory.add(gridFine);
+const gridBold = new THREE.GridHelper(140, 14, 0x2f9bff, 0x1a6a8f);
+gridBold.position.y = 0.008; gridBold.material.transparent = true; gridBold.material.opacity = 0.35; factory.add(gridBold);
+
+// G-2. 컨베이어 라인 : 베드 + 사이드 레일 + 롤러(InstancedMesh 1 드로우콜)
+box(factory, 44, 0.2, 3.5, M.dark, 0, 0.14, 0);
+for (const z of [-1.85, 1.85]) {
+  box(factory, 44, 0.34, 0.2, M.steel, 0, 0.2, z);
+  box(factory, 44, 0.03, 0.06, M.blue, 0, 0.385, z);       // 레일 위 네온 라인
+}
+const ROLLERS = 88;
+const rollerGeo = new THREE.CylinderGeometry(0.09, 0.09, 3.4, 10).rotateX(Math.PI / 2);
+const rollers = new THREE.InstancedMesh(rollerGeo, M.silver, ROLLERS);
+const dummy = new THREE.Object3D();
+for (let i = 0; i < ROLLERS; i++) { dummy.position.set(-21.75 + i * 0.5, 0.27, 0); dummy.updateMatrix(); rollers.setMatrixAt(i, dummy.matrix); }
+rollers.receiveShadow = true; factory.add(rollers);
+// 컨베이어 진행 방향을 보여주는 이동 표시등
+const chevrons = [];
+for (let i = 0; i < 12; i++) for (const z of [-2.15, 2.15]) {
+  const c = box(factory, 0.9, 0.02, 0.12, M.mint, -22 + i * 3.7, 0.02, z); c.castShadow = false; chevrons.push(c);
+}
+
+// G-3. 작업 스테이션 바닥 표시(네온 테두리) + 회전 홀로그램 링
+for (const [w, d, x, z] of [[15, 0.08, 0, 5.6], [15, 0.08, 0, -5.6], [0.08, 11.2, 7.5, 0], [0.08, 11.2, -7.5, 0]]) {
+  const s = box(factory, w, 0.02, d, M.blue, x, 0.015, z); s.castShadow = false;
+}
+const holoMat = new THREE.MeshBasicMaterial({ color:0x2ff5c8, transparent:true, opacity:0.22, side:THREE.DoubleSide, depthWrite:false });
+const holoRings = [[8.6, 8.75, 64, 1], [9.2, 9.5, 6, -1]].map(([r1, r2, seg, dir]) => {
+  const ring = new THREE.Mesh(new THREE.RingGeometry(r1, r2, seg, 1, 0, Math.PI * 1.6), holoMat);
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03; ring.userData.dir = dir; factory.add(ring); return ring;
+});
+
+// G-4. 기둥 + 천장 트러스 + 뒷벽 사이니지
+for (let x = -24; x <= 24; x += 12) for (const z of [-13, 13]) {
+  box(factory, 0.6, 11, 0.6, M.dark, x, 5.5, z);
+  const strip = box(factory, 0.08, 9, 0.08, z < 0 ? M.mint : M.blue, x, 5, z + (z < 0 ? 0.34 : -0.34)); strip.castShadow = false;
+}
+for (let x = -24; x <= 24; x += 12) { const b = box(factory, 0.4, 0.5, 26.6, M.dark, x, 10.9, 0); b.castShadow = false; }
+for (const z of [-6, 6]) { const b = box(factory, 52, 0.3, 0.3, M.steel, 0, 10.6, z); b.castShadow = false; }
+box(factory, 60, 12, 0.3, std(0x08131f, 0.4, 0.7), 0, 6, -14.4);
+for (const y of [2.2, 9.4]) { const s = box(factory, 60, 0.05, 0.05, M.blue, 0, y, -14.2); s.castShadow = false; }
+label(factory, 'DIGITAL TWIN · BUS ASSEMBLY LINE 01', 18, 1.5, 0, 7.2, -14.2);
+label(factory, '섀시 → 바퀴 → 구동계 → 골격 → 외판 → 유리 → 실내 → 검사', 14, 0.7, 0, 5.7, -14.2, 0, '#2f9bff');
+
+// G-5. 라인 진입/출구 스캔 게이트
+for (const x of [-15, 15]) {
+  for (const z of [-2.6, 2.6]) box(factory, 0.3, 5.2, 0.3, M.dark, x, 2.6, z);
+  box(factory, 0.3, 0.3, 5.5, M.dark, x, 5.2, 0);
+  const s = box(factory, 0.06, 0.06, 4.9, M.mint, x, 5.0, 0); s.castShadow = false;
+  for (const z of [-2.42, 2.42]) { const v = box(factory, 0.06, 4.6, 0.06, M.mint, x, 2.6, z); v.castShadow = false; }
+}
+
+// G-6. AGV(무인 운반차) 2대 : 뒤쪽 통로를 왕복
+const agvs = [9, -9.5].map((z, i) => {
+  const a = new THREE.Group(); a.position.set(i ? 6 : -6, 0, z);
+  box(a, 2.2, 0.35, 1.3, M.dark, 0, 0.3, 0);
+  box(a, 1.6, 0.7, 1.0, std(0x10283c, 0.3, 0.6), 0, 0.82, 0);
+  const s = box(a, 2.22, 0.05, 1.32, i ? M.blue : M.mint, 0, 0.22, 0); s.castShadow = false;
+  a.userData = { phase: i * 2.4, z }; factory.add(a); return a;
+});
+
+// G-7. 공중 부유 입자 (Points 1 드로우콜)
+const dustGeo = new THREE.BufferGeometry();
+const dustPos = new Float32Array(360 * 3);
+for (let i = 0; i < 360; i++) { dustPos[i*3] = (Math.random()-0.5)*50; dustPos[i*3+1] = Math.random()*10+0.5; dustPos[i*3+2] = (Math.random()-0.5)*28; }
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color:0x6fd8ff, size:0.05, transparent:true, opacity:0.55, depthWrite:false }));
+factory.add(dust);
+
+/* =====================================================================
+   H. 산업용 로봇 팔 (6축 로봇을 단순화한 3관절 구조) : 회전 피벗을 Group 으로 계층화
+      base → turret(Y회전) → shoulder(Z회전) → elbow(Z회전) → tool
+   ===================================================================== */
+const robots = [];
+function makeRobot(x, z) {
+  const root = new THREE.Group();
+  root.position.set(x, 0, z);
+  root.rotation.y = z > 0 ? Math.PI / 2 : -Math.PI / 2;    // 팔이 굽는 방향(로컬 +X)을 버스 쪽으로
+  box(root, 1.5, 0.2, 1.5, M.dark, 0, 0.1, 0);
+  cyl(root, 0.55, 0.4, M.robotJ, 0, 0.4, 0);
+
+  const turret = new THREE.Group(); turret.position.y = 0.6; root.add(turret);
+  cyl(turret, 0.42, 0.5, M.robot, 0, 0.25, 0);
+
+  const shoulder = new THREE.Group(); shoulder.position.y = 0.55; turret.add(shoulder);
+  cyl(shoulder, 0.3, 0.7, M.robotJ, 0, 0, 0, 'z');
+  box(shoulder, 0.36, 1.9, 0.4, M.robot, 0, 0.95, 0);
+
+  const elbow = new THREE.Group(); elbow.position.y = 1.9; shoulder.add(elbow);
+  cyl(elbow, 0.24, 0.6, M.robotJ, 0, 0, 0, 'z');
+  box(elbow, 0.28, 1.6, 0.3, M.robot, 0, 0.8, 0);
+  cyl(elbow, 0.13, 0.35, M.robotJ, 0, 1.75, 0);
+  const tipMat = M.mint.clone();                            // 로봇마다 밝기를 따로 제어하기 위해 복제
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 8), tipMat); tip.position.y = 1.97; elbow.add(tip);
+
+  factory.add(root);
+  robots.push({ turret, shoulder, elbow, tipMat, phase: x * 0.7 + z });
+}
+makeRobot(-3.8, 4.5); makeRobot(3.6, 4.5); makeRobot(-3.6, -4.5); makeRobot(3.8, -4.5);
+
+/* =====================================================================
+   I. 버스 모듈 : 공정별 THREE.Group 으로 분리된 부품을 프리미티브로 조립
+      좌표계 : 전방 = -X, 출입문 = +Z, 차량 길이 약 10.5
+      각 부품은 scatter(흩어진 시작 오프셋) / explode(분해 보기 오프셋) 을 가진다
+   ===================================================================== */
+const bus = new THREE.Group(); bus.position.y = CONVEYOR_TOP; scene.add(bus);
+const parts = [];
+
+function part(def, build) {
+  const group = new THREE.Group(); group.name = def.id; group.visible = false;
+  build(group);
+  const p = { ...def, group, scatter: V(...def.scatter), explode: V(...def.explode), active:false, delay:0, meshes:[] };
+  p.order = parts.filter(q => q.stage === p.stage).length;  // 같은 공정 내 순번 → 순차 등장 지연에 사용
+  group.traverse(o => {
+    if (!o.isMesh) return;
+    o.userData.part = p;
+    o.userData.xr = XRAY_MATS.includes(o.material);         // X-RAY 시 클릭이 통과할 외피 메시
+    if (o.material.transparent) o.castShadow = false;
+    if (!o.userData.noPick) p.meshes.push(o);
+  });
+  group.position.copy(p.scatter);
+  parts.push(p); bus.add(group); return p;
+}
+
+/* ---------- 공정 1 : 섀시 ---------- */
+part({ id:'rails', name:'메인 사이드 레일', stage:0, desc:'차량 전체 하중을 지지하는 좌·우 종방향 강재 레일과 전·후 엔드 멤버입니다.',
+       spec:['고장력강', '412 kg', '2 본', '용접'], scatter:[-16,0,0], explode:[0,0,0] }, g => {
+  for (const z of [-0.9, 0.9]) { box(g, 10.28, 0.24, 0.16, M.steel, 0, 1.01, z); box(g, 10.1, 0.06, 0.07, M.silver, 0, 1.16, z); }
+  for (const x of [-4.83, 4.83]) box(g, 0.23, 0.32, 2.24, M.steel, x, 0.92, 0);
+});
+part({ id:'cross', name:'크로스 멤버', stage:0, desc:'좌·우 레일을 연결해 비틀림 강성을 확보하는 횡방향 보강재입니다.',
+       spec:['고장력강', '186 kg', '11 본', '볼트 체결'], scatter:[0,6,-6], explode:[0,0,0] }, g => {
+  for (let i = 0; i < 11; i++) box(g, 0.14, 0.2, 1.64, M.dark, -4.4 + i * 0.88, 1.01, 0);
+});
+part({ id:'deck', name:'플로어 데크', stage:0, desc:'객실 바닥의 기초가 되는 저상 플로어 패널과 사이드 실입니다.',
+       spec:['알루미늄 허니컴', '238 kg', '1 식', '구조용 접착'], scatter:[0,8,0], explode:[0,0.9,0] }, g => {
+  box(g, 10.5, 0.085, 2.39, M.dark, 0, 1.18, 0);
+  for (const z of [-1.16, 1.16]) box(g, 10.6, 0.1, 0.14, M.silver, 0, 1.18, z);
+});
+
+/* ---------- 공정 2 : 차축 · 바퀴 ---------- */
+const AXLE_X = { front: -3.76, rear: 3.46 };
+function buildAxle(g, x) {
+  cyl(g, 0.15, 2.5, M.dark, x, 0.55, 0, 'z');
+  for (const s of [-1, 1]) {
+    cyl(g, 0.08, 0.5, M.steel, x, 0.85, s * 0.98);                      // 쇼크 업소버
+    cyl(g, 0.17, 0.26, M.black, x + 0.38, 0.84, s * 0.9);              // 에어 스프링
+    box(g, 0.9, 0.08, 0.14, M.steel, x + 0.2, 0.68, s * 0.9);          // 트레일링 암
+  }
+}
+function buildWheel(g, x, s) {
+  const z = s * 1.27;
+  cyl(g, 0.53, 0.32, M.rubber, x, 0.55, z, 'z', 36);
+  cyl(g, 0.34, 0.33, M.silver, x, 0.55, z, 'z', 28);
+  cyl(g, 0.12, 0.36, M.dark, x, 0.55, z, 'z', 16);
+  for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; cyl(g, 0.028, 0.35, M.black, x + Math.sin(a) * 0.22, 0.55 + Math.cos(a) * 0.22, z, 'z', 8); }
+}
+part({ id:'axle-f', name:'전륜 차축 · 서스펜션', stage:1, desc:'조향을 담당하는 전륜 차축과 에어 서스펜션 모듈입니다.',
+       spec:['단조강', '310 kg', '1 식', '볼트 420 N·m'], scatter:[-8,0,0], explode:[0,0,0] }, g => buildAxle(g, AXLE_X.front));
+part({ id:'axle-r', name:'후륜 차축 · 서스펜션', stage:1, desc:'구동력을 전달하는 후륜 차축과 에어 서스펜션 모듈입니다.',
+       spec:['단조강', '365 kg', '1 식', '볼트 420 N·m'], scatter:[8,0,0], explode:[0,0,0] }, g => buildAxle(g, AXLE_X.rear));
+[['wheel-fl','전륜 좌측 휠',AXLE_X.front,-1],['wheel-fr','전륜 우측 휠',AXLE_X.front,1],['wheel-rl','후륜 좌측 휠',AXLE_X.rear,-1],['wheel-rr','후륜 우측 휠',AXLE_X.rear,1]]
+  .forEach(([id, name, x, s]) => part({ id, name, stage:1, desc:'275/70 R22.5 급 타이어와 알루미늄 휠을 단순화한 모듈입니다. 허브 볼트로 차축에 체결됩니다.',
+       spec:['고무 / 알루미늄', '58 kg', '1 본', '허브 너트 600 N·m'], scatter:[x < 0 ? -2.5 : 2.5, 1.5, s * 7], explode:[0, 0, s * 1.8] }, g => buildWheel(g, x, s)));
+
+/* ---------- 공정 3 : 배터리 · 구동계 ---------- */
+[-2.25, -0.45, 1.35].forEach((x, i) => part({ id:'batt-' + (i + 1), name:`고전압 배터리 팩 #${i + 1}`, stage:2,
+       desc:'섀시 하부에 장착되는 리튬이온 배터리 팩입니다. 상단의 민트색 라인은 셀 모듈 상태 표시를 표현합니다.',
+       spec:['리튬이온(NCM)', '640 kg', '96 kWh', '볼트 110 N·m'], scatter:[(i - 1) * 2.5, 0, 7.5], explode:[0, 0, -4.8] }, g => {
+  box(g, 1.5, 0.06, 1.48, M.steel, x, 0.49, 0);
+  box(g, 1.48, 0.32, 1.45, M.battery, x, 0.68, 0);
+  for (const z of [-0.5, -0.25, 0, 0.25, 0.5]) box(g, 1.3, 0.025, 0.07, M.cell, x, 0.85, z);
+}));
+part({ id:'motor', name:'e-액슬 구동 모터', stage:2, desc:'후륜 차축과 일체화된 전기 구동 모터와 감속기입니다.',
+       spec:['영구자석 동기모터', '280 kg', '240 kW', '볼트 250 N·m'], scatter:[10,3,0], explode:[0,0,-4.8] }, g => {
+  cyl(g, 0.36, 0.95, M.steel, 3.46, 0.6, 0, 'z', 28);
+  for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5; box(g, 0.05, 0.05, 0.8, M.dark, 3.46 + Math.sin(a) * 0.37, 0.6 + Math.cos(a) * 0.37, 0); }
+  box(g, 0.5, 0.42, 0.5, M.dark, 2.95, 0.62, 0);
+});
+part({ id:'inverter', name:'인버터 · 고전압 케이블', stage:2, desc:'배터리의 직류를 모터 구동용 교류로 변환하는 인버터와 주황색 고전압 배선입니다.',
+       spec:['SiC 파워모듈', '46 kg', '1 식', '커넥터 체결'], scatter:[0,5,-7], explode:[0,0.5,-4.8] }, g => {
+  box(g, 0.7, 0.36, 0.9, M.dark, 4.3, 0.68, 0);
+  box(g, 0.5, 0.03, 0.7, M.blue, 4.3, 0.875, 0);
+  for (const z of [-0.8, 0.8]) { box(g, 6.6, 0.07, 0.07, M.hv, 1.0, 0.82, z); box(g, 0.07, 0.07, 0.5, M.hv, 4.3, 0.82, z * 0.7); }
+});
+
+/* ---------- 공정 4 : 차체 골격 ---------- */
+const PILLAR_X = [-5.04, -3.78, -2.43, -1.1, 0.31, 1.58, 3.03, 4.42, 5.04];
+function buildSideFrame(g, z) {
+  box(g, 10.42, 0.11, 0.1, M.silver, 0, 3.3, z);
+  box(g, 10.42, 0.09, 0.09, M.steel, 0, 2.06, z);
+  for (const x of PILLAR_X) box(g, 0.095, 2.18, 0.11, M.silver, x, 2.26, z);
+  for (let i = 0; i < 4; i++) {                              // 허리선 아래 대각 브레이스
+    const b = box(g, 1.5, 0.06, 0.06, M.steel, -3.1 + i * 2.6, 1.64, z); b.rotation.z = i % 2 ? 0.55 : -0.55;
+  }
+}
+part({ id:'frame-l', name:'좌측 측면 골격', stage:3, desc:'운전석 측 필러와 벨트 레일, 대각 브레이스로 구성된 측면 스페이스 프레임입니다.',
+       spec:['각관 스틸', '294 kg', '1 식', '용접'], scatter:[0,2,-8], explode:[0,2.2,-0.4] }, g => buildSideFrame(g, -1.17));
+part({ id:'frame-r', name:'우측 측면 골격', stage:3, desc:'출입문 측 필러와 벨트 레일로 구성된 측면 스페이스 프레임입니다.',
+       spec:['각관 스틸', '281 kg', '1 식', '용접'], scatter:[0,2,8], explode:[0,2.2,0.4] }, g => buildSideFrame(g, 1.17));
+part({ id:'bows', name:'루프 보우', stage:3, desc:'좌·우 골격 상단을 연결해 지붕 하중을 지지하는 횡방향 부재입니다.',
+       spec:['각관 스틸', '118 kg', '8 본', '용접'], scatter:[0,8,0], explode:[0,3.4,0] }, g => {
+  for (let i = 0; i < 8; i++) box(g, 0.1, 0.095, 2.42, M.silver, -5.04 + i * 1.44, 3.35, 0);
+  box(g, 10.2, 0.07, 0.07, M.steel, 0, 3.36, 0);
+});
+
+/* ---------- 공정 5 : 외관 차체 ---------- */
+function buildSideShell(g, s) {
+  box(g, 10.56, 0.81, 0.095, M.paint, 0, 1.57, s * 1.215);
+  box(g, 10.5, 0.22, 0.1, M.roof, 0, 3.26, s * 1.22);
+  box(g, 10.53, 0.07, 0.1, M.trim, 0, 2.01, s * 1.24);
+  box(g, 10.55, 0.04, 0.03, M.mint, 0, 1.3, s * 1.27).castShadow = false;   // 네온 캐릭터 라인
+}
+part({ id:'shell-r', name:'우측(출입문 측) 외판', stage:4, desc:'도장 완료된 출입문 측 사이드 패널입니다.',
+       spec:['알루미늄 판재', '142 kg', '1 식', '접착 + 리벳'], scatter:[0,0,9], explode:[0,2.2,3.4] }, g => buildSideShell(g, 1));
+part({ id:'shell-l', name:'좌측(운전석 측) 외판', stage:4, desc:'도장 완료된 운전석 측 사이드 패널입니다.',
+       spec:['알루미늄 판재', '148 kg', '1 식', '접착 + 리벳'], scatter:[0,0,-9], explode:[0,2.2,-3.4] }, g => buildSideShell(g, -1));
+part({ id:'shell-f', name:'전면 패널 · 범퍼', stage:4, desc:'전면 외판과 범퍼, LED 헤드램프, 행선지 표시기 하우징입니다.',
+       spec:['FRP 복합재', '74 kg', '1 식', '볼트 체결'], scatter:[-9,0,0], explode:[-3.2,2.2,0] }, g => {
+  box(g, 0.16, 0.92, 2.36, M.paint, -5.27, 1.51, 0);
+  box(g, 0.14, 0.24, 2.36, M.trim, -5.3, 3.24, 0);
+  box(g, 0.2, 0.2, 2.42, M.dark, -5.32, 1.06, 0);
+  for (const z of [-0.9, 0.9]) { box(g, 0.04, 0.13, 0.36, M.led, -5.36, 1.62, z); box(g, 0.04, 0.05, 0.4, M.mint, -5.36, 1.78, z); }
+  label(g, 'DT-01  디지털 트윈 시범노선', 1.9, 0.2, -5.375, 3.24, 0, -Math.PI / 2, '#ffd36b', '#05101a');
+});
+part({ id:'shell-b', name:'후면 패널 · 테일램프', stage:4, desc:'후면 외판과 테일램프, 점검 커버를 표현합니다.',
+       spec:['FRP 복합재', '81 kg', '1 식', '볼트 체결'], scatter:[9,0,0], explode:[3.2,2.2,0] }, g => {
+  box(g, 0.18, 2.1, 2.38, M.paint, 5.27, 2.06, 0);
+  box(g, 0.2, 0.2, 2.42, M.dark, 5.36, 1.1, 0);
+  for (const z of [-1.03, 1.03]) { box(g, 0.04, 0.55, 0.14, M.tail, 5.37, 2.0, z); box(g, 0.04, 0.12, 0.14, M.led, 5.37, 1.55, z); }
+});
+part({ id:'roof', name:'루프 패널 · 공조 유닛', stage:4, desc:'지붕 패널과 상부 공조(HVAC) 유닛, 전장 하우징입니다.',
+       spec:['알루미늄 / FRP', '205 kg', '1 식', '접착 + 볼트'], scatter:[0,9,0], explode:[0,6.2,0] }, g => {
+  box(g, 10.63, 0.2, 2.53, M.roof, 0, 3.47, 0);
+  for (const x of [-2.6, -0.6]) box(g, 1.5, 0.26, 1.64, M.roof, x, 3.69, 0);
+  box(g, 2.3, 0.3, 1.7, M.dark, 3.1, 3.71, 0);
+  for (let i = 0; i < 12; i++) box(g, 0.06, 0.05, 1.4, M.steel, 2.15 + i * 0.17, 3.88, 0);
+  box(g, 10.2, 0.02, 0.04, M.mint, 0, 3.58, 1.2).castShadow = false;
+  box(g, 10.2, 0.02, 0.04, M.mint, 0, 3.58, -1.2).castShadow = false;
+});
+
+/* ---------- 공정 6 : 유리 · 출입문 ---------- */
+part({ id:'glass-f', name:'윈드실드(전면 유리)', stage:5, desc:'운전자 시야를 확보하는 대형 접합 안전유리와 와이퍼입니다.',
+       spec:['접합 안전유리', '48 kg', '1 매', '우레탄 접착'], scatter:[-9,3,0], explode:[-4.6,2.2,0] }, g => {
+  box(g, 0.05, 1.12, 2.24, M.glass, -5.34, 2.56, 0);
+  for (const z of [-1.13, 1.13]) box(g, 0.07, 1.16, 0.07, M.trim, -5.35, 2.56, z);
+  for (const z of [-0.45, 0.45]) { const w = box(g, 0.03, 0.03, 0.85, M.black, -5.38, 2.12, z); w.rotation.x = 0.2; }
+});
+part({ id:'glass-b', name:'후면 유리', stage:5, desc:'후방 시야용 강화유리입니다.',
+       spec:['강화유리', '22 kg', '1 매', '우레탄 접착'], scatter:[9,3,0], explode:[4.6,2.2,0] }, g => {
+  box(g, 0.05, 0.9, 1.94, M.glass, 5.38, 2.65, 0);
+});
+function buildSideGlass(g, s) {
+  const list = s > 0 ? [[-2.69,1.43],[-1.25,1.37],[2.25,1.34],[3.58,1.22],[4.62,0.72]]
+                     : [[-4.3,1.3],[-2.95,1.3],[-1.6,1.3],[-0.25,1.3],[1.1,1.3],[2.45,1.3],[3.8,1.3]];
+  for (const [x, w] of list) {
+    box(g, w, 1.07, 0.04, M.glass, x, 2.6, s * 1.25);
+    box(g, 0.05, 1.11, 0.06, M.trim, x - w / 2, 2.6, s * 1.25);
+    box(g, 0.05, 1.11, 0.06, M.trim, x + w / 2, 2.6, s * 1.25);
+  }
+}
+part({ id:'glass-r', name:'우측 측면 창', stage:5, desc:'출입문 측 측면 강화유리와 창틀입니다.',
+       spec:['강화유리', '64 kg', '5 매', '우레탄 접착'], scatter:[0,2,9], explode:[0,2.2,4.8] }, g => buildSideGlass(g, 1));
+part({ id:'glass-l', name:'좌측 측면 창', stage:5, desc:'운전석 측 측면 강화유리와 창틀입니다.',
+       spec:['강화유리', '88 kg', '7 매', '우레탄 접착'], scatter:[0,2,-9], explode:[0,2.2,-4.8] }, g => buildSideGlass(g, -1));
+part({ id:'doors', name:'승하차 출입문', stage:5, desc:'전문·중문 2개소의 양개식 전동 출입문입니다. 하단의 노란 라인은 저상 진입부 안전 표시입니다.',
+       spec:['알루미늄 + 강화유리', '96 kg', '2 조', '힌지 볼트 체결'], scatter:[0,0,11], explode:[0,2.2,6.2] }, g => {
+  for (const dx of [-4.09, 0.43]) {
+    for (const s of [-1, 1]) {
+      const x = dx + s * 0.31;
+      box(g, 0.59, 1.82, 0.05, M.glass, x, 2.12, 1.31);
+      box(g, 0.05, 1.9, 0.07, M.trim, x + s * 0.27, 2.12, 1.33);
+      box(g, 0.58, 0.09, 0.07, M.trim, x, 3.05, 1.33);
+      box(g, 0.58, 0.08, 0.07, M.pole, x, 1.22, 1.33);
+      box(g, 0.025, 0.4, 0.05, M.silver, x - s * 0.24, 2.1, 1.37);
+    }
+    for (const e of [-0.64, 0.64]) box(g, 0.06, 1.95, 0.09, M.trim, dx + e, 2.14, 1.3);
+  }
+});
+part({ id:'lamps', name:'사이드 미러 · 실내등 · 사이니지', stage:5, desc:'사이드 미러, 실내 LED 조명 라인, 측면 안내 표시기를 묶은 전장 모듈입니다.',
+       spec:['ABS / LED', '18 kg', '1 식', '커넥터 체결'], scatter:[-4,8,0], explode:[0,2.2,0] }, g => {
+  for (const z of [-1.5, 1.5]) {
+    box(g, 0.08, 0.08, 0.36, M.trim, -5.12, 3.0, z * 0.9);
+    box(g, 0.1, 0.42, 0.24, M.trim, -5.14, 2.74, z);
+    box(g, 0.02, 0.34, 0.18, M.silver, -5.08, 2.74, z);
+  }
+  for (const x of [-3.6, -1.5, 0.9, 3.2]) box(g, 1.3, 0.03, 0.1, M.led, x, 3.27, 0).castShadow = false;
+  label(g, 'ZERO EMISSION · 전기 저상버스', 3.2, 0.3, 2.3, 1.62, 1.268, 0, '#ffffff', '#0b5fb5');
+});
+
+/* ---------- 공정 7 : 실내 ---------- */
+part({ id:'liner', name:'객실 바닥재', stage:6, desc:'미끄럼 방지 처리된 객실 바닥재와 중앙 통로 표시입니다.',
+       spec:['PVC 논슬립', '62 kg', '1 식', '접착'], scatter:[0,7,0], explode:[0,2.2,0] }, g => {
+  box(g, 10.1, 0.05, 2.27, M.liner, 0, 1.25, 0);
+  box(g, 9.8, 0.012, 0.74, M.trim, 0, 1.282, 0);
+  for (const z of [-0.38, 0.38]) box(g, 9.8, 0.014, 0.03, M.pole, 0, 1.284, z).castShadow = false;
+});
+const SEAT_X = [-2.85, -1.97, -1.1, 1.76, 2.64, 3.53, 4.34];
+function buildSeats(g, s) {
+  for (const x of SEAT_X) {
+    const z = s * 0.76;
+    box(g, 0.53, 0.12, 0.48, M.seat, x, 1.72, z);
+    box(g, 0.47, 0.04, 0.41, M.seatIn, x, 1.8, z);
+    box(g, 0.12, 0.67, 0.5, M.seat, x + 0.2, 2.1, z);
+    box(g, 0.04, 0.44, 0.42, M.seatIn, x + 0.135, 2.12, z);
+    box(g, 0.3, 0.05, 0.05, M.pole, x + 0.2, 2.47, z);                   // 등받이 손잡이
+    for (const lx of [-0.18, 0.18]) box(g, 0.05, 0.4, 0.05, M.steel, x + lx, 1.47, z);
+  }
+}
+part({ id:'seats-l', name:'좌측 승객 좌석', stage:6, desc:'운전석 측 승객 좌석 7석입니다. 등받이 상단에 안전 손잡이가 있습니다.',
+       spec:['난연 패브릭 / 스틸', '98 kg', '7 석', '플로어 볼트'], scatter:[0,7,-5], explode:[0,2.2,0] }, g => buildSeats(g, -1));
+part({ id:'seats-r', name:'우측 승객 좌석', stage:6, desc:'출입문 측 승객 좌석 7석입니다. 중문 부근은 휠체어·입석 공간으로 비워 둡니다.',
+       spec:['난연 패브릭 / 스틸', '98 kg', '7 석', '플로어 볼트'], scatter:[0,7,5], explode:[0,2.2,0] }, g => buildSeats(g, 1));
+part({ id:'poles', name:'안전 손잡이 · 스탠션', stage:6, desc:'입석 승객을 위한 수직 스탠션과 천장 그랩 레일, 손잡이입니다.',
+       spec:['스테인리스(분체도장)', '44 kg', '1 식', '브래킷 체결'], scatter:[5,9,0], explode:[0,2.2,0] }, g => {
+  for (const x of [-3.0, -1.5, 0.0, 0.9, 2.2, 3.9]) cyl(g, 0.025, 1.8, M.pole, x, 2.2, 0.36, 'y', 10);
+  for (const z of [-0.36, 0.36]) {
+    box(g, 8.6, 0.045, 0.045, M.pole, 0.3, 3.08, z);
+    for (let i = 0; i < 9; i++) box(g, 0.02, 0.22, 0.06, M.silver, -3.3 + i * 0.9, 2.95, z);
+  }
+});
+part({ id:'driver', name:'운전석 모듈', stage:6, desc:'운전석 시트, 대시보드, 스티어링 휠, 디지털 계기판과 요금 단말기입니다.',
+       spec:['복합 모듈', '86 kg', '1 식', '볼트 체결'], scatter:[-9,5,-3], explode:[0,2.2,0] }, g => {
+  box(g, 0.6, 0.16, 0.56, M.seat, -4.4, 1.7, -0.62);
+  box(g, 0.14, 0.86, 0.58, M.seat, -4.08, 2.08, -0.62);
+  box(g, 0.5, 0.5, 2.1, M.black, -4.98, 1.75, -0.05);
+  box(g, 0.04, 0.16, 0.5, M.mint, -4.74, 2.07, -0.62).castShadow = false;   // 디지털 계기판
+  const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.025, 10, 28), M.trim);
+  wheel.position.set(-4.62, 2.02, -0.62); wheel.rotation.y = Math.PI / 2; wheel.rotation.x = 0; wheel.rotation.z = 0.35;
+  wheel.castShadow = true; g.add(wheel);
+  box(g, 0.2, 0.7, 0.2, M.silver, -3.7, 1.63, 0.95);
+  box(g, 0.22, 0.2, 0.22, M.blue, -3.7, 2.08, 0.95);
+});
+
+/* ---------- 공정 8 : 최종 품질 검사(스캔 게이트) ---------- */
+const qaSweep = new THREE.Group();                         // 차량 길이 방향으로 왕복하는 스캔 프레임
+part({ id:'qa', name:'품질 검사 스캔 게이트', stage:7, desc:'차체 외관·단차·전장 상태를 스캔하는 가상 검사 게이트입니다. 실제 검사·인증을 의미하지 않습니다.',
+       spec:['가상 설비', '—', '1 식', '—'], scatter:[0,9,0], explode:[0,0,0] }, g => {
+  for (const z of [-1.9, 1.9]) box(qaSweep, 0.08, 4.1, 0.08, M.mint, 0, 2.05, z).castShadow = false;
+  box(qaSweep, 0.08, 0.08, 3.88, M.mint, 0, 4.1, 0).castShadow = false;
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(3.8, 4.1),
+    new THREE.MeshBasicMaterial({ color:0x2ff5c8, transparent:true, opacity:0.1, side:THREE.DoubleSide, depthWrite:false }));
+  plane.rotation.y = Math.PI / 2; plane.position.y = 2.05; plane.userData.noPick = true;   // 스캔 면은 클릭 대상에서 제외
+  qaSweep.add(plane); g.add(qaSweep);
+  label(g, 'VIRTUAL QA  ✓  PASS', 3.2, 0.36, 0, 4.75, 0, 0, '#2ff5c8', '#04201c');
+});
+
+/* =====================================================================
+   J. 상태 관리 + 조립 로직
+   ===================================================================== */
+const state = {
+  stage: -1,          // 현재 공정 인덱스 (0~7)
+  auto: false,        // 자동 재생 여부
+  speed: 1,           // 재생 속도 배율
+  explode: false,     // 분해 보기
+  xray: false,        // 외피 반투명
+  autoXray: false,    // 실내 공정 진입 시 자동으로 켠 X-RAY 인지 여부
+  busy: false,        // 부품 이동 중 여부
+  hold: 0,            // 자동 재생 시 단계 간 대기 시간 누적
+  selected: null,     // 선택된 부품
+  installed: 0        // 제 위치에 결합된 부품 수
+};
+let pickables = [];   // 현재 클릭 가능한(조립된) 메시 목록
+
+function log(msg) {
+  const row = document.createElement('div'), t = document.createElement('time');
+  t.textContent = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+  row.append(t, document.createTextNode(msg));
+  $('log').prepend(row);
+  while ($('log').children.length > 10) $('log').lastElementChild.remove();
+}
+
+// 공정 이동 : 해당 단계까지의 부품을 활성화하고, 새로 활성화된 부품은 흩어진 위치에서 출발시킨다
+function setStage(n, { moveCam = true } = {}) {
+  n = Math.max(0, Math.min(STAGES.length - 1, n));
+  const prev = state.stage;
+  state.stage = n; state.hold = 0;
+  for (const p of parts) {
+    const was = p.active;
+    p.active = p.stage <= n;
+    if (p.active && !was) {
+      if (!p.group.visible) { p.group.position.copy(p.scatter); p.group.visible = true; }
+      // 여러 단계를 건너뛰면 단계 순서대로, 같은 단계 안에서는 부품 순서대로 시차를 두고 결합
+      p.delay = Math.max(0, p.stage - prev - 1) * 0.55 + p.order * 0.16;
+    } else if (!p.active && was) p.delay = 0;
+  }
+  pickables = parts.filter(p => p.active).flatMap(p => p.meshes);
+  if (state.selected && !state.selected.active) selectPart(null);
+
+  // 실내 공정에서는 내부가 보이도록 외피를 자동으로 반투명 처리, 벗어나면 복원
+  if (n === 6 && !state.xray) { state.autoXray = true; setXray(true, true); }
+  else if (n !== 6 && state.autoXray) { state.autoXray = false; setXray(false, true); }
+
+  if (moveCam) flyTo(STAGES[n].cam, STAGES[n].target, 'stage');
+  renderStageUI();
+  if (prev !== n) log(`[${pad2(n + 1)}] ${STAGES[n].title} 공정 ${n > prev ? '시작' : '로 되돌림'}`);
+}
+
+function setAuto(on) {
+  if (on && state.stage === STAGES.length - 1) setStage(0);   // 끝에서 재생하면 처음부터
+  state.auto = on; state.hold = 0;
+  $('btn-play').textContent = on ? 'Ⅱ 일시정지' : '▶ 재생';
+  log(on ? '자동 조립 시퀀스 재생' : '자동 조립 일시정지');
+}
+
+function setExplode(on) {
+  state.explode = on; toggleBtn('btn-explode', on);
+  if (on) flyTo([-17, 11.5, 20], [0, 3.4, 0], 'overview');
+  log(on ? '부품 분해 보기 ON' : '분해 보기 OFF · 결합 상태 복원');
+}
+
+function setXray(on, silent = false) {
+  state.xray = on; toggleBtn('btn-xray', on);
+  const sel = state.selected; if (sel) clearHighlight();        // 복제 재질이 있으므로 하이라이트를 다시 만든다
+  XRAY_MATS.forEach((m, i) => {
+    const d = xrayDefaults[i];
+    m.transparent = on ? true : d.transparent;
+    m.opacity = on ? Math.min(d.opacity, 0.14) : d.opacity;
+    m.depthWrite = on ? false : d.depthWrite;
+    m.needsUpdate = true;
+  });
+  if (sel) applyHighlight(sel);
+  if (!silent) { state.autoXray = false; log(on ? '외피 X-RAY 모드 ON' : '외피 X-RAY 모드 OFF'); }
+}
+
+function toggleBtn(id, on) { $(id).classList.toggle('on', on); $(id).setAttribute('aria-pressed', on); }
+
+/* =====================================================================
+   K. 카메라 이동 : 목표 위치/타깃으로 매 프레임 lerp. 사용자가 조작하면 즉시 취소
+   ===================================================================== */
+const VIEWS = {
+  overview: { cam:[-13,7.6,15],    target:[0,2.4,0] },
+  side:     { cam:[0,4.2,17.5],    target:[0,2.3,0] },
+  front:    { cam:[-17,3.8,0.01],  target:[0,2.4,0] },
+  rear:     { cam:[16,4.4,-2.5],   target:[0,2.4,0] },
+  top:      { cam:[-0.01,23,3.5],  target:[0,1.5,0] },
+  under:    { cam:[1.5,1.15,11.5], target:[0,1.25,0] },
+  cabin:    { cam:[1.6,3.15,0],    target:[-4,2.75,-0.1] }
+};
+let camGoal = null;
+function flyTo(cam, target, viewId) {
+  camGoal = { pos: V(...cam), target: V(...target) };
+  document.querySelectorAll('#views button').forEach(b => b.classList.toggle('active', b.dataset.view === viewId));
+}
+function setView(id) {
+  if (id === 'stage') { const s = STAGES[state.stage]; flyTo(s.cam, s.target, 'stage'); return; }
+  if (id === 'cabin') {                                          // 실내 시점은 실내 공정 이후 + X-RAY 가 필요
+    if (state.stage < 6) { state.auto && setAuto(false); setStage(6, { moveCam:false }); }
+    if (!state.xray) setXray(true);
+  }
+  const v = VIEWS[id]; flyTo(v.cam, v.target, id);
+}
+controls.addEventListener('start', () => { camGoal = null; });  // 사용자 드래그/줌 시작 시 자동 이동 중단
+
+/* =====================================================================
+   L. Raycasting : 부품 선택 + 발광(Emissive) 테두리 하이라이트 + 호버 툴팁
+   ===================================================================== */
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const edgeMat = new THREE.LineBasicMaterial({ color:0x2ff5c8, transparent:true, opacity:0.95 });
+let glowMats = [];                                                // 선택 부품에 적용된 발광 복제 재질
+
+function pick(clientX, clientY) {
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set((clientX - r.left) / r.width * 2 - 1, -(clientY - r.top) / r.height * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(pickables, false);
+  if (!hits.length) return null;
+  // X-RAY 중에는 반투명 외피를 통과해 안쪽 부품을 우선 선택
+  const hit = (state.xray && hits.find(h => !h.object.userData.xr)) || hits[0];
+  return hit.object.userData.part;
+}
+
+// 선택 부품의 각 메시에 (1) emissive 가 들어간 복제 재질, (2) EdgesGeometry 네온 외곽선을 적용
+function applyHighlight(p) {
+  const cache = new Map();                                        // 같은 원본 재질은 복제본도 공유
+  for (const mesh of p.meshes) {
+    const src = mesh.material;
+    if (src.emissive) {
+      if (!cache.has(src)) { const c = src.clone(); c.emissive.set(0x19d9b6); c.emissiveIntensity = 0.5; cache.set(src, c); }
+      mesh.userData.origMat = src; mesh.material = cache.get(src);
+    }
+    const edge = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 28), edgeMat);
+    edge.scale.setScalar(1.01); mesh.add(edge); mesh.userData.edge = edge;
+  }
+  glowMats = [...cache.values()];
+}
+function clearHighlight() {
+  const p = state.selected; if (!p) return;
+  for (const mesh of p.meshes) {
+    if (mesh.userData.origMat) { mesh.material = mesh.userData.origMat; delete mesh.userData.origMat; }
+    if (mesh.userData.edge) { mesh.remove(mesh.userData.edge); mesh.userData.edge.geometry.dispose(); delete mesh.userData.edge; }
+  }
+  glowMats.forEach(m => m.dispose()); glowMats = [];
+}
+function selectPart(p) {
+  clearHighlight();
+  state.selected = p;
+  if (p) { applyHighlight(p); log(`부품 선택: ${p.name}`); }
+  renderInspector();
+}
+// 선택한 부품이 화면에 꽉 차도록 카메라를 이동
+function focusSelected() {
+  const p = state.selected; if (!p) return;
+  const b = new THREE.Box3().setFromObject(p.group), c = b.getCenter(V()), size = b.getSize(V()).length();
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  flyTo(c.clone().addScaledVector(dir, Math.max(4, size * 1.25)).toArray(), c.toArray(), null);
+}
+
+// 클릭(드래그와 구분) → 선택, 이동 → 호버 툴팁
+let downAt = null; const hover = { x:0, y:0, dirty:false };
+const cv = renderer.domElement;
+cv.addEventListener('pointerdown', e => { downAt = { x:e.clientX, y:e.clientY }; });
+cv.addEventListener('pointerup', e => {
+  if (!downAt) return;
+  const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y); downAt = null;
+  if (moved > 6) return;                                           // 드래그(카메라 회전)는 선택으로 취급하지 않음
+  const p = pick(e.clientX, e.clientY);
+  selectPart(p && p !== state.selected ? p : null);
+  if (p && window.matchMedia('(max-width:900px)').matches) openDrawer('right');
+});
+cv.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') { hover.x = e.clientX; hover.y = e.clientY; hover.dirty = true; } });
+cv.addEventListener('pointerleave', () => { $('tip').hidden = true; cv.style.cursor = ''; hover.dirty = false; });
+function updateHover() {                                           // 렌더 루프에서 프레임당 최대 1회만 레이캐스트
+  hover.dirty = false;
+  if (downAt) { $('tip').hidden = true; return; }
+  const p = pick(hover.x, hover.y), tip = $('tip');
+  cv.style.cursor = p ? 'pointer' : '';
+  tip.hidden = !p;
+  if (p) { const r = host.getBoundingClientRect(); tip.textContent = p.name; tip.style.left = (hover.x - r.left) + 'px'; tip.style.top = (hover.y - r.top) + 'px'; }
+}
+
+/* =====================================================================
+   M. UI 렌더링 : 공정 버튼 / HUD / 진행률 / 인스펙터
+   ===================================================================== */
+// M-1. 공정 버튼 생성
+STAGES.forEach((s, i) => {
+  const b = document.createElement('button');
+  b.className = 'stage'; b.dataset.stage = i;
+  b.innerHTML = `<span class="num">${pad2(i + 1)}</span><span><strong>${s.title}</strong><small>${s.sub}</small></span><span class="mark">○</span>`;
+  b.addEventListener('click', () => { if (state.auto) setAuto(false); setStage(i); closeDrawers(); });
+  $('stage-list').append(b);
+});
+
+// M-2. 공정 변경 시 갱신되는 UI
+function renderStageUI() {
+  const i = state.stage, s = STAGES[i];
+  $('hud-step').textContent = pad2(i + 1);
+  $('hud-title').textContent = s.title;
+  $('hud-desc').textContent = s.desc;
+  document.querySelectorAll('.stage').forEach(b => {
+    const k = +b.dataset.stage;
+    b.classList.toggle('active', k === i); b.classList.toggle('done', k < i);
+    b.querySelector('.mark').textContent = k < i ? '✓' : k === i ? '●' : '○';
+  });
+  $('btn-prev').disabled = i === 0;
+  $('btn-next').disabled = i === STAGES.length - 1;
+}
+
+// M-3. 매 프레임 값이 바뀔 수 있는 UI : 변경이 있을 때만 DOM 을 건드린다
+const uiCache = {};
+function setText(id, v) { if (uiCache[id] !== v) { uiCache[id] = v; $(id).textContent = v; } }
+function renderLiveUI() {
+  const pct = Math.round(state.installed / parts.length * 100);
+  if (uiCache.pct !== pct) {
+    uiCache.pct = pct;
+    $('pct').textContent = pct;
+    $('ring-bar').style.strokeDashoffset = (263.9 * (1 - pct / 100)).toFixed(1);
+    $('mini-fill').style.width = pct + '%';
+  }
+  const doneStages = STAGES.filter((_, i) => parts.every(p => p.stage !== i || p.settled)).length;
+  setText('st-done', `${Math.min(doneStages, state.stage + (state.busy ? 0 : 1))} / ${STAGES.length}`);
+  setText('st-parts', `${state.installed} / ${parts.length}`);
+  const done = !state.busy && state.stage === STAGES.length - 1;
+  const label = state.busy ? '조립 중' : done ? '검사 완료' : state.auto ? '다음 공정 대기' : '대기';
+  if (uiCache.state !== label) {
+    uiCache.state = label;
+    $('st-state').textContent = label;
+    const pill = $('hud-state'); pill.textContent = label; pill.className = 'pill' + (state.busy ? ' busy' : done ? ' done' : '');
+  }
+}
+
+// M-4. 부품 인스펙터
+function renderInspector() {
+  const el = $('inspector'), p = state.selected;
+  el.classList.toggle('sel', !!p);
+  if (!p) {
+    el.innerHTML = `<span class="tag">NO SELECTION</span><h3>부품을 선택하세요</h3>
+      <p>3D 뷰어에서 조립된 부품(바퀴, 배터리, 외판, 좌석 등)을 클릭하면 이름과 설명, 가상 사양이 여기에 표시됩니다.</p>`;
+    return;
+  }
+  el.innerHTML = `<span class="tag">PART · ${p.id.toUpperCase()}</span><h3>${p.name}</h3><p>${p.desc}</p>
+    <table>
+      <tr><td>장착 공정</td><td>${pad2(p.stage + 1)} · ${STAGES[p.stage].title}</td></tr>
+      <tr><td>재질</td><td>${p.spec[0]}</td></tr>
+      <tr><td>중량(가상)</td><td>${p.spec[1]}</td></tr>
+      <tr><td>수량/용량</td><td>${p.spec[2]}</td></tr>
+      <tr><td>체결 방식</td><td>${p.spec[3]}</td></tr>
+      <tr><td>메시 수</td><td>${p.meshes.length}</td></tr>
+    </table>
+    <div class="row"><button class="btn" id="insp-focus">부품으로 이동</button><button class="btn" id="insp-clear">선택 해제</button></div>`;
+  $('insp-focus').addEventListener('click', focusSelected);
+  $('insp-clear').addEventListener('click', () => selectPart(null));
+}
+
+/* =====================================================================
+   N. UI 이벤트 바인딩
+   ===================================================================== */
+$('btn-play').addEventListener('click', () => setAuto(!state.auto));
+$('btn-prev').addEventListener('click', () => { if (state.auto) setAuto(false); setStage(state.stage - 1); });
+$('btn-next').addEventListener('click', () => { if (state.auto) setAuto(false); setStage(state.stage + 1); });
+$('btn-explode').addEventListener('click', () => setExplode(!state.explode));
+$('btn-xray').addEventListener('click', () => setXray(!state.xray));
+$('btn-spin').addEventListener('click', () => { controls.autoRotate = !controls.autoRotate; toggleBtn('btn-spin', controls.autoRotate); });
+$('btn-reset').addEventListener('click', () => {
+  if (state.auto) setAuto(false);
+  if (state.explode) setExplode(false);
+  state.autoXray = false; if (state.xray) setXray(false, true);
+  controls.autoRotate = false; toggleBtn('btn-spin', false);
+  selectPart(null); setStage(0, { moveCam:false }); setView('overview');
+  log('전체 공정 초기화');
+});
+$('speed').addEventListener('input', e => { state.speed = +e.target.value; $('speed-val').textContent = state.speed.toFixed(2).replace(/0$/, '') + '×'; });
+document.querySelectorAll('#views button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+
+// 모바일 서랍(좌/우 패널) 열고 닫기
+function openDrawer(side) {
+  closeDrawers(); $('panel-' + side).classList.add('open'); $('scrim').classList.add('open');
+}
+function closeDrawers() {
+  $('panel-left').classList.remove('open'); $('panel-right').classList.remove('open'); $('scrim').classList.remove('open');
+}
+$('nav-left').addEventListener('click', () => openDrawer('left'));
+$('nav-right').addEventListener('click', () => openDrawer('right'));
+$('scrim').addEventListener('click', closeDrawers);
+
+// 키보드 단축키 : Space 재생/정지, ←/→ 단계 이동, Esc 선택 해제
+window.addEventListener('keydown', e => {
+  if (e.target.closest('input,button')) return;
+  if (e.code === 'Space') { e.preventDefault(); setAuto(!state.auto); }
+  else if (e.key === 'ArrowRight') { if (state.auto) setAuto(false); setStage(state.stage + 1); }
+  else if (e.key === 'ArrowLeft') { if (state.auto) setAuto(false); setStage(state.stage - 1); }
+  else if (e.key === 'Escape') { selectPart(null); closeDrawers(); }
+});
+
+/* =====================================================================
+   O. 가상 KPI 시뮬레이션 : 1초마다 무작위 보행(random walk)으로 값 갱신 + 스파크라인
+   ===================================================================== */
+const kpi = { oee: 87.4, tact: 62, torque: 418, energy: 0, hist: [] };
+const spark = $('spark').getContext('2d');
+function tickKPI() {
+  const busy = state.busy;
+  kpi.oee = THREE.MathUtils.clamp(kpi.oee + (Math.random() - 0.48) * (busy ? 1.4 : 0.5), 78, 96);
+  kpi.tact = Math.round(THREE.MathUtils.clamp(62 / state.speed + (Math.random() - 0.5) * 4, 20, 140));
+  kpi.torque = Math.round(418 + (Math.random() - 0.5) * 14);
+  kpi.energy += busy ? 0.11 * state.speed : 0.02;
+  $('k-oee').textContent = kpi.oee.toFixed(1);
+  $('k-tact').textContent = kpi.tact;
+  $('k-torque').textContent = kpi.torque;
+  $('k-energy').textContent = kpi.energy.toFixed(1);
+  $('k-speed').textContent = (busy ? 1.2 * state.speed : 0).toFixed(1);
+  $('hud-clock').textContent = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+  // 스파크라인(OEE 추이)
+  kpi.hist.push(kpi.oee); if (kpi.hist.length > 48) kpi.hist.shift();
+  const W = 560, H = 92; spark.clearRect(0, 0, W, H);
+  spark.beginPath();
+  kpi.hist.forEach((v, i) => { const x = i / 47 * (W - 16) + 8, y = H - 10 - (v - 76) / 22 * (H - 20); i ? spark.lineTo(x, y) : spark.moveTo(x, y); });
+  spark.strokeStyle = '#2ff5c8'; spark.lineWidth = 3; spark.shadowColor = '#2ff5c8'; spark.shadowBlur = 8; spark.stroke(); spark.shadowBlur = 0;
+  spark.fillStyle = '#6f8ba8'; spark.font = '18px ui-monospace,monospace'; spark.fillText('OEE TREND', 10, 22);
+}
+
+/* =====================================================================
+   P. 캔버스 리사이징 : 창 크기 변경 + 패널 폭 변경(ResizeObserver) 모두 대응
+   ===================================================================== */
+function resize() {
+  const w = host.clientWidth, h = host.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+new ResizeObserver(resize).observe(host);
+resize();
+
+/* =====================================================================
+   Q. 렌더 루프
+   ===================================================================== */
+let last = performance.now(), time = 0, kpiTimer = 0, fpsTimer = 0, frames = 0, activity = 0;
+
+function animate(now) {
+  const dt = Math.min((now - last) / 1000, 0.05); last = now; time += dt;
+  const sdt = dt * state.speed;
+
+  // Q-1. 부품 조립 애니메이션 : 각 부품 그룹의 위치를 목표 지점으로 Vector3.lerp
+  //      목표 = 조립됨(원점) / 분해 보기(explode) / 미조립(scatter)
+  const k = 1 - Math.exp(-sdt * 3.4);                              // 프레임률에 독립적인 보간 계수
+  let busy = false, installed = 0;
+  for (const p of parts) {
+    p.settled = false;
+    if (!p.group.visible) continue;
+    if (p.delay > 0) { p.delay -= sdt; busy = true; continue; }
+    const target = p.active ? (state.explode ? p.explode : ZERO) : p.scatter;
+    const pos = p.group.position;
+    pos.lerp(target, k);
+    const d = pos.distanceTo(target);
+    if (d < 0.004) { pos.copy(target); if (!p.active) p.group.visible = false; }
+    if (p.active) { if (d < 0.05) { p.settled = true; installed++; } else busy = true; }
+  }
+  state.busy = busy; state.installed = installed;
+
+  // Q-2. 자동 재생 : 현재 공정이 결합 완료되면 잠시 대기 후 다음 공정으로
+  if (state.auto && !busy) {
+    state.hold += sdt;
+    if (state.hold > 1.3) {
+      if (state.stage < STAGES.length - 1) setStage(state.stage + 1);
+      else { setAuto(false); log('전 공정 완료 · 가상 품질 검사 PASS'); }
+    }
+  }
+
+  // Q-3. 공장 설비 애니메이션 (로봇 팔 / 컨베이어 표시등 / AGV / 홀로 링 / 스캔 게이트)
+  activity += ((busy ? 1 : 0.3) - activity) * Math.min(1, dt * 3);  // 조립 중에는 로봇이 더 활발히 움직임
+  for (const r of robots) {
+    const t = time * (0.8 + state.speed * 0.4) + r.phase;
+    r.turret.rotation.y = Math.sin(t * 0.7) * 0.55 * activity;
+    r.shoulder.rotation.z = -0.5 + Math.sin(t * 1.1) * 0.24 * activity;
+    r.elbow.rotation.z = -1.1 + Math.cos(t * 1.4) * 0.34 * activity;
+    r.tipMat.emissiveIntensity = busy ? 1.5 + Math.random() * 3 : 0.8;   // 용접 스파크 느낌의 깜빡임
+  }
+  for (const c of chevrons) { c.position.x += sdt * 1.6; if (c.position.x > 22) c.position.x -= 44; }
+  for (const a of agvs) a.position.x = Math.sin(time * 0.22 + a.userData.phase) * 16;
+  for (const h of holoRings) h.rotation.z += dt * 0.25 * h.userData.dir;
+  dust.rotation.y += dt * 0.01;
+  qaSweep.position.x = state.stage === 7 ? Math.sin(time * 0.9 * state.speed) * 5.2 : 0;
+
+  // Q-4. 선택 부품 발광 맥동
+  if (glowMats.length) {
+    const pulse = 0.5 + Math.sin(time * 5) * 0.3;
+    for (const m of glowMats) m.emissiveIntensity = pulse;
+    edgeMat.opacity = 0.7 + Math.sin(time * 5) * 0.3;
+  }
+
+  // Q-5. 카메라 자동 이동
+  if (camGoal) {
+    const ck = 1 - Math.exp(-dt * 3);
+    camera.position.lerp(camGoal.pos, ck);
+    controls.target.lerp(camGoal.target, ck);
+    if (camera.position.distanceTo(camGoal.pos) < 0.02) camGoal = null;
+  }
+  controls.update();
+
+  // Q-6. UI 갱신 (호버 / 진행률 / KPI / FPS)
+  if (hover.dirty) updateHover();
+  renderLiveUI();
+  kpiTimer += dt; if (kpiTimer >= 1) { kpiTimer = 0; tickKPI(); }
+  frames++; fpsTimer += dt;
+  if (fpsTimer >= 0.5) {
+    $('hud-fps').textContent = Math.round(frames / fpsTimer) + ' FPS';
+    $('hud-calls').textContent = renderer.info.render.calls;
+    frames = 0; fpsTimer = 0;
+  }
+
+  renderer.render(scene, camera);
+}
+
+/* =====================================================================
+   R. 초기화 : 1단계부터 자동 재생으로 시작
+   ===================================================================== */
+renderInspector();
+tickKPI();
+setStage(0);
+setAuto(true);
+log('디지털 트윈 연결 완료 · 부품 ' + parts.length + '개 모듈 로드');
+window.__twinReady = true;
+$('loading').hidden = true;
+renderer.setAnimationLoop(animate);
+</script>
+
+<script>
+/* Three.js 모듈 로드에 실패했을 때(오프라인 등) 빈 화면 대신 안내 문구를 보여준다 */
+window.addEventListener('load', function () {
+  setTimeout(function () {
+    if (!window.__twinReady) {
+      document.getElementById('loading-msg').textContent =
+        '3D 모듈을 불러오지 못했습니다. 인터넷 연결(CDN 접근)과 브라우저의 WebGL 지원 여부를 확인한 뒤 새로고침해 주세요.';
+    }
+  }, 10000);
+});
+</script>
+</body>
+</html>
